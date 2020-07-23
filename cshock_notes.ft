@@ -1,0 +1,98 @@
+# Notes
+- Cardiogenic Shock
+	- Invasive intervention
+	- More Severe Cases = Who's going to Die
+
+- https://www.mdcalc.com/save-survival-veno-arterial-ecmo-score
+
+- Data
+	- Training / CV: MIMIC Dataset
+	- Independent Validation: C, D, E
+
+- Outcome Determinted by SCAI Level
+	- A, B, C, D, E
+	- D, E sickest
+	- Cardiogenic Shock = C or great
+
+- eICU
+
+- A - At risk 
+- B - Developing signs
+- C - Blood
+- D - 
+- E - 
+- shock_index = mean heart rate/bpv
+- training = eicu set
+- everything in liberal is in strict
+
+# Features Preprocessing
+ 
+- Heart_Rate_Min <=60
+- Heart_Rate_Mean >= 100
+
+**Systolic**
+- 80, 140, 190
+- systolic_min < 80
+- systolic_max > 140, 180
+
+**Diastolic**
+ - 40, 90, 110
+- systolic_min < 40
+- systolic_max > 90, 110
+
+**respiratory_rate_mean <= 20**
+	- 12
+	- 25
+
+- SPO2_min 88
+- SPO2 quartiles
+
+- T_Mean > 38
+
+
+- Age >= 60
+- Age >= 70
+- Age >= 80
+
+
+- **AnionGap>= 14**
+- Bicarbonate_Min <= 22
+- Chloride_Max <= 110
+- Glucose_Min <= 70
+- Hematocrit_Max >= 50
+
+- Hemoglobin <= 8, <=10
+- Platelet_min < 150
+- Platelet_max >= 400
+- Potassium_max > 5
+- INR > 2
+- ignore PT
+
+- Sodium_Min < 135
+- BUN_Max >= 25
+
+- WBC_Max < 11K
+- WBC_Max > 20K
+
+- RDW_Max < 14
+
+
+- heart_rate/mean blood pressure
+
+- shock_index > 1
+- GCS < 8
+
+# Baseline Analyses
+
+- Train on eICU
+	- Training = 1
+	- 5-CV on eICU
+
+- Test on MIMIC
+
+- RiskSLIM
+	- 6 to 7 features
+
+- LR with cshock_cts
+- LR with Percentile Cutoffs
+- SVM RBF
