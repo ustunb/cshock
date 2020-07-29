@@ -1,3 +1,7 @@
+# Risk-SLIM
+- pushing this soon
+
+# Pipeline (to fit models with basic ML methods)
 ## Directory Structure 
 
 - /data/                 	processed RData files of datasets
@@ -50,16 +54,3 @@ To run the pipeline:
 1. Edit `train_models.sh` with the `data_name`, `fold_id`, range of weights, methods and free parameters for each method.
 
 2. Execute `train_models.sh` in Bash
-
-## Analyzing Results
-
-## Coming Soon
-
-**To Do**
-
-- [ ] Report Creation Script
-- [ ] Fix ReadMe.txt with full instructions
-- [ ] Add Case Weight Support to DataFileTest
-- [ ] Check for Packages in StartUp.R
-- [ ] Check Results Table in ProcessResults.R
-
