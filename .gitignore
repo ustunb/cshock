@@ -1,44 +1,71 @@
-# jekyll
-*.yml
-.nojekyll
+# Git Ignore File
+# This file tells git what kind of files to ignore in commits
 
-# PyCharm
-.idea/
+# Pipeline Specific
+PIPELINE_DEFAULTS
+PIPELINE_DIRECTORIES
+ext/
+logs/
+results/
+dev/
+
+# directories
+comp_name.sh
+data/*.p
+data/*.csv
+data/*.pickle
+
+# Logs and Run-Based Variables
+.log
+.setting
 
 # Notes
 *.ft
 
-# directories
-logs/
-dev/
-local/
-results/
-cluster/comp_name.sh
-comp_name.sh
-cluster/*.command
-data/*.p
-data/*.csv
-data/*.pickle
-data/*.RData
-data/pretrial/*.csv
-data/pretrial/*.RData
-data/recidivism/*.csv
-data/recidivism/*.RData
-data/recidivism_*
-data/pretrial_*
+# PyCharm
+.idea/
+
+# R Stuff
+*.Rhistory
+*.Rproj
 .RData
-.Rhistory
-**.Rproj
+.Rapp.history
+.Rproj.user/
 
+# OSX File Types
+.dropbox
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Icon
 
+# General Filetypes
+*.7z
+*.dmg
+*.gz
+*.iso
+*.jar
+*.rar
+*.tar
+*.zip
+*.tar.gz
+
+# Compiled Source
+*.com
+*.class
+*.dll
+*.exe
+*.o
+*.so
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
-
-# General
-*.DS_Store
 
 # C extensions
 *.so
@@ -61,34 +88,3 @@ var/
 *.egg-info/
 .installed.cfg
 *.egg
-
-# PyInstaller
-#  Usually these files are written by a python script from a template
-#  before PyInstaller builds the exe
-*.manifest
-*.spec
-
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
-
-# Unit test / coverage reports
-
-htmlcov/
-.tox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*,cover
-.hypothesis/
-
-# Translations
-*.mo
-*.pot
-
-
-# PyBuilder
-target/
-.Rproj.user
