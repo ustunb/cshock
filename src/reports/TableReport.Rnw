@@ -1,0 +1,124 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Preamble                  %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\documentclass[letter]{article}
+
+%% Latex Formatting
+\addtolength{\oddsidemargin}{-.975in}
+\addtolength{\evensidemargin}{-.975in}
+\addtolength{\textwidth}{1.95in}
+\addtolength{\topmargin}{-1.00in}
+\addtolength{\textheight}{1.75in}
+
+%% Tex Packages
+\usepackage[british]{babel}
+\usepackage{amsmath}
+\usepackage{hyperref}
+\usepackage{tabularx}
+\usepackage{comment}
+\usepackage{array}
+\usepackage{bigstrut}
+\usepackage{booktabs}
+\usepackage{verbatim}
+\usepackage{fancyvrb}
+\usepackage{placeins}
+\usepackage{rotating}
+
+%Colors
+\usepackage{colortbl}
+\usepackage{xcolor}
+\definecolor{best}{HTML}{BAFFCD}
+\definecolor{issue}{HTML}{FFC8BA}
+
+\newcommand{\cell}[2]{\begin{tabular}{#1}#2\end{tabular}}
+\newcommand{\bfcell}[2]{\setlength{\tabcolsep}{0pt}\textbf{\begin{tabular}{#1}#2\end{tabular}}}
+\newcommand{\textds}[1]{\texttt{#1}}
+
+
+%% R Packages
+<<r_packages, results="hide",message=FALSE,echo=FALSE>>=
+required_packages = c('dplyr', 'knitr', 'ggplot2', 'xtable', 'C50','Hmisc', 'formatR', 'gridExtra', 'rpart.plot', 'scales');
+for (pkg in required_packages){
+    suppressPackageStartupMessages(require(pkg, character.only = TRUE, warn.conflicts = FALSE, quietly = TRUE));
+}
+@
+
+%% Knitr Options and Defaults
+<<knitr_options,results="hide",message=FALSE,echo=FALSE>>=
+set.if.missing = function(settings, field_name, default_value){
+    if (!(field_name %in% names(settings))){
+        settings[[field_name]] = default_value;
+    }
+    return(settings);
+}
+
+#report data defaults
+report_data = set.if.missing(report_data, "landscape", FALSE);
+report_data = set.if.missing(report_data, "include_title", FALSE);
+report_data = set.if.missing(report_data, "title", "");
+
+opts_chunk$set(comment=NA,
+               fig.width=8,
+               fig.height=8,
+               fig.path=paste0("figure/",report_data$filename,"_",sep=""),
+               results='asis',
+               echo=FALSE,
+               message=FALSE,
+               dev="pdf")
+@
+%
+%
+\begin{document}
+\pagenumbering{gobble}
+<<include_title>>=
+if (report_data$include_title) {
+    cat(sprintf("\\subsubsection*{%s}\n", report_data$title))
+}
+@
+%
+<<begin_table>>=
+if (report_data$landscape) {
+    cat(sprintf("\\begin{sidewaystable}\n"))
+} else{
+    cat("\\begin{table}[htbp]")
+}
+@
+%
+\renewcommand{\arraystretch}{1.05}\resizebox{0.8\textwidth}{!}{%
+\centering
+\scriptsize
+%
+%
+%TABLEBEGINS
+<<table>>=
+n_rows = nrow(report_data$table);
+print.xtable(report_data$table,
+             type = "latex",
+             floating = FALSE,
+             table.placement = "ht",
+             sanitize.text.function = function(str) paste0(gsub("_","\\_", str,fixed=TRUE),"\n"),
+             sanitize.rownames.function = function(str) paste0(gsub("_","\\_", str,fixed=TRUE), "\n"),
+             sanitize.colnames.function = function(str) paste0(gsub("_","\\_", str,fixed=TRUE),"\n"),
+             include.rownames = FALSE,
+             include.colnames = TRUE,
+             tabular.environment = "tabular",
+             NA.string="-",
+             comment=FALSE,
+             timestamp=FALSE,
+             hline.after=NULL,
+             booktabs=TRUE,
+             add.to.row=list(pos=as.list(-1:n_rows),
+                             command=c(rep('\\toprule\n',2),rep('\n\\midrule\n\n',n_rows-1),'\n\\bottomrule\n')));
+@
+%TABLEENDS
+}
+%
+<<end_table>>=
+if (report_data$landscape) {
+    cat(sprintf("\n\\end{sidewaystable}"))
+} else{
+    cat("\n\\end{table}")
+}
+@
+
+\end{document}

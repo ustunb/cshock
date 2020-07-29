@@ -1,0 +1,70 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                              Preamble                                        %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\documentclass[letter]{article}
+
+%% Latex Formatting
+\addtolength{\oddsidemargin}{-1.0in}
+\addtolength{\evensidemargin}{-1.0in}
+\addtolength{\textwidth}{2.00in}
+\addtolength{\topmargin}{-1.00in}
+\addtolength{\textheight}{1.75in}
+
+%% Tex Packages
+\usepackage[british]{babel}
+\usepackage{amsmath}
+\usepackage{hyperref}
+\usepackage{tabularx}
+\usepackage{comment}
+\usepackage{array}
+\usepackage{bigstrut}
+\usepackage{subcaption}
+\usepackage{booktabs}
+\usepackage{verbatim}
+\usepackage{fancyvrb}
+\usepackage{placeins}
+\usepackage{rotating}
+
+\newcommand{\cell}[2]{\begin{tabular}{#1}#2\end{tabular}}
+\newcommand{\bfcell}[2]{\setlength{\tabcolsep}{0pt}\textbf{\begin{tabular}{#1}#2\end{tabular}}}
+
+%% Knitr Options and Defaults
+<<knitr_options,results="hide",message=FALSE,echo=FALSE>>=
+set.if.missing = function(settings, field_name, default_value){
+    if (!(field_name %in% names(settings))){
+        settings[[field_name]] = default_value;
+    }
+    return(settings);
+}
+
+#report data defaults
+report_data = set.if.missing(report_data, "landscape", FALSE);
+report_data = set.if.missing(report_data, "legend_file_name", NA);
+report_data = set.if.missing(report_data, "pdf_file_name", NA);
+
+opts_chunk$set(comment=NA,
+               fig.width=8,
+               fig.height=8,
+               results='asis',
+               echo=FALSE,
+               message=FALSE,
+               dev="pdf")
+@
+%
+\begin{document}
+\pagenumbering{gobble}
+{\renewcommand{\arraystretch}{0.05}
+\begin{tabular}{@{}c@{}}
+<<add_pdf_files>>=
+if (!is.na(report_data$legend_file_name)){
+    file.copy(from = report_data$legend_file_name, to = "legend_tmp.pdf");
+    cat(sprintf("\\includegraphics[height=0.05\\textheight,clip]{legend_tmp.pdf}\\\\"));
+}
+if (!is.na(report_data$pdf_file_name)){
+    file.copy(from = report_data$pdf_file_name, to = "body_tmp.pdf")
+    cat(sprintf("\\includegraphics[height=0.95\\textheight,clip]{body_tmp.pdf}"))
+}
+@
+\end{tabular}
+}
+\end{document}

@@ -1,0 +1,42 @@
+%This is a knitr template to print a title page for easy report generation
+%
+\documentclass[letter]{article}
+
+%% Latex Formatting
+\addtolength{\oddsidemargin}{-.975in}
+\addtolength{\evensidemargin}{-.975in}
+\addtolength{\textwidth}{1.95in}
+\addtolength{\topmargin}{-1.00in}
+\addtolength{\textheight}{1.75in}
+
+%% Tex Packages
+\usepackage[british]{babel}
+\usepackage{amsmath}
+\usepackage{hyperref}
+\usepackage{tabularx}
+\usepackage{comment}
+\usepackage{array}
+\usepackage{bigstrut}
+\usepackage{subcaption}
+\usepackage{booktabs}
+\usepackage{verbatim}
+\usepackage{fancyvrb}
+\usepackage{placeins}
+
+%% Knitr Options
+<<knitr_options,results="hide",message=FALSE,echo=FALSE>>=
+opts_chunk$set(comment=NA,
+               fig.width=8,
+               fig.height=8,
+               fig.path=paste0("figure/",report_data$filename,"_",sep=""),
+               results='asis',
+               echo=FALSE,
+               message=FALSE,
+               dev="pdf")
+@
+%%REPORT_CONTENT_START
+\title{\Sexpr{report_data$title}}
+%%REPORT_CONTENT_END
+\begin{document}
+\maketitle
+\end{document}
