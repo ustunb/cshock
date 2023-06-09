@@ -3,9 +3,6 @@ from riskslim.paths import repo_dir, results_dir, reports_dir, reporting_dir
 from scripts.utils import get_results_name
 
 data_name = 'cshock'
-max_coefficient = 5
-
-data_name = 'cshock'
 method_name = 'riskslim'
 max_L0_value = 5
 max_coefficient = 5

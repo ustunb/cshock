@@ -1,0 +1,486 @@
+---
+output:
+  pdf_document: 
+    keep_tex: yes
+    fig_width: 6
+    fig_height: 4
+    toc: false
+    number_sections: false
+    extra_dependencies:
+      colortbl: []
+      booktabs: []
+      grffile: ["space"]
+      flafter: []
+
+fontsize: 11pt
+geometry: margin=1in
+
+params:
+  report_python_dir: '/Users/berk/Dropbox (Harvard University)/repos/cshock/'
+  build_dir: '/Users/berk/Dropbox (Harvard University)/repos/cshock/reports/'
+  venv_dir: '/Users/berk/.virtualenvs/py39arm/bin/python'
+  report_data: '/Users/berk/Dropbox (Harvard University)/repos/cshock/results/yosemite_st5_riskslim_C1_L7_K05N01_0.results'
+  platt_scaling: FALSE
+---
+
+```{=latex}
+
+%Font Faces
+\newcommand{\cell}[2]{\begin{tabular}{#1}#2\end{tabular}}
+\newcommand{\bfcell}[2]{\setlength{\tabcolsep}{0pt}\textbf{\begin{tabular}{#1}#2\end{tabular}}}
+\newcommand{\textds}[1]{\texttt{\footnotesize{#1}}}
+\newcommand{\textfn}[1]{#1}
+\newcommand{\textssm}[1]{\sf{#1}}
+
+%Scoring System Models
+\newcommand{\prow}[0]{\quad\mathrel{\raisebox{-0.75ex}{\dots}}}
+\newcommand{\score}[0]{{\color{black}\textbf{SCORE}}}
+
+%Colors for Scoring System Models
+\definecolor{predcolor}{gray}{0.95}
+\definecolor{scorecolor}{gray}{0.95}
+\definecolor{riskcolor}{gray}{0.95}
+
+%Commands for Scoring System Models
+\newcommand{\modelfont}{\renewcommand*\familydefault{\sfdefault}\normalfont}
+\newcommand{\instruction}[2]{{\color{white}\phantom{\textbf{add points from rows {#1} to {#2}}}}}
+
+\newcommand{\scoringsystem}[0]{\footnotesize\centering\renewcommand{\arraystretch}{1.35}\modelfont{}}
+\newcommand{\risktable}[0]{\par\vspace{0.5em}\footnotesize\centering\renewcommand{\arraystretch}{1.25}\modelfont{}}
+\newcommand{\predcell}[2]{\par\vspace{0.5em}\renewcommand{\arraystretch}{1.5}\modelfont%
+\begin{tabular}{|>{\columncolor{predcolor}}{#1}|}\hline\small{\textbf{#2}}\\\hline\end{tabular}}
+
+\newcommand{\risklabel}[0]{{\color{black}\textbf{RISK}}}
+\newcommand{\scorelabel}[0]{{\color{black}\textbf{SCORE}}}
+\pagenumbering{gobble}
+```
+
+```{r r-setup, include = FALSE}
+
+packages = c('reticulate', 'dplyr', 'purrr', 'tidyr', 'knitr', 'ggplot2', 'xtable', 'stringr', 'reshape2', 'scales', 'gridExtra', 'grid')
+for (pkg in packages) {
+  library(pkg, character.only = TRUE, warn.conflicts = FALSE, quietly = TRUE, verbose = FALSE)
+}
+
+# load python virtual environment for reticulate
+tryCatch({
+  use_condaenv(condaenv = params$venv_dir, required = TRUE)
+}, error = function(error_condition) {
+  use_virtualenv(virtualenv = params$venv_dir, required = TRUE)
+})
+
+# helper functions
+source(paste0(params$report_python_dir, "/reporting/utils.R"))
+
+# knitr
+knitr::opts_knit$set(
+  echo = FALSE,
+  warning = FALSE, 
+  fig.path = 'figure/' 
+)
+
+```
+
+```{python python-setup, include = FALSE}
+import sys
+import numpy as np
+import pandas as pd
+import dill
+import itertools
+from pathlib import Path
+
+# package-related
+sys.path.append(r.params["report_python_dir"])
+
+from riskslim.defaults import INTERCEPT_NAME
+from riskslim.paths import data_dir, results_dir
+from riskslim.data_io import load_processed_data
+from riskslim.cross_validation import split_data_by_cvindices
+from scripts.utils import get_results_name, get_baseline_results_name
+
+```
+
+```{python python-load, include = FALSE}
+
+with open(r.params['report_data'], 'rb') as infile:
+    results = dill.load(infile)
+
+# build header
+build_dir = Path(r.params['build_dir'])
+build_header = str(build_dir / Path(r.params['report_data']).stem)
+
+# Load Data
+results['data_file'] = data_dir / Path(results['data_file']).name #in case it was run somewhere else
+results['data_name'] = (results['data_file'].stem).replace('_processed', '')
+discrete_flag = results['method_name'] in ("riskslim")
+
+try:
+    data, cvindices = load_processed_data(file_name = str(results['data_file']))
+except KeyError:
+    data, cvindices = load_processed_data(file_name = str(results['data_file_name']))
+
+
+# Report-Specific Parameters
+platt_scaling = bool(r.params['platt_scaling'])
+    
+if 'feature_subset_file' in results and results['feature_subset_file'] is not None:
+    with open(results['feature_subset_file'], 'rb') as infile:
+        fs_results = dill.load(infile)
+    keep_idx = np.flatnonzero(fs_results['coefs'])
+    data['X'] = data['X'][:, keep_idx]
+    data['X_test'] = data['X_test'][:, keep_idx]
+    data['variable_names'] = [n for j, n in enumerate(data['variable_names']) if j in keep_idx]
+    data['variable_types'] = {k:v for k,v in data['variable_types'].items() if k in data['variable_names']}
+
+n_folds = int(results['fold_id'][1:3])
+
+# Load CV Results
+if 'plr' in results['method_name']:
+  get_fold_filename = lambda k: get_baseline_results_name(data_name = results['data_name'], method_name = results['method_name'], max_L0_value = results['max_L0_value'], fold_id = results['fold_id'], fold_num = k)
+else:
+  get_fold_filename = lambda k: get_results_name(data_name = results['data_name'], method_name = results['method_name'], max_L0_value = results['max_L0_value'], max_coefficient = results['max_coefficient'], fold_id = results['fold_id'], fold_num = k)
+
+fold_results = {}
+for k in range(1, n_folds+1):
+    
+    if platt_scaling and 'plr' in results['method_name']:
+        f = results_dir / ('%s_platt' % get_fold_filename(k))
+    else:
+        f = results_dir / ('%s' % get_fold_filename(k))
+    
+    f = f.with_suffix('.results')
+    
+    if f.exists():
+      with open(f, 'rb') as infile:
+        fold_results[k] = dill.load(infile)
+      fold_results[k]['fold_num'] = k
+      
+has_fold_results = len(fold_results) == n_folds
+
+# Title
+if platt_scaling:
+  report_title = "%s -- %s + Platt Scaling -- %r terms" % (results['data_name'], results['method_name'], results['max_L0_value'])
+else:
+  report_title = "%s -- %s -- %r Terms" % (results['data_name'], results['method_name'], results['max_L0_value'])
+    
+# Model
+coefs = results['coefs']
+if discrete_flag:
+  coefs = np.round(coefs)
+
+intercept_value = coefs[data['variable_names'].index(INTERCEPT_NAME)]
+  
+# Summary information
+table_info = {
+    'Method Name': results['method_name'],
+    'Platt Scaling': 'TRUE' if platt_scaling else 'FALSE',
+    'Max Coefficient': results['max_coefficient'],
+    'Max Model Size': results['max_L0_value'],
+    'Objective Value': '%1.2f' % results['objective_value'],
+    'Optimality Gap': '%1.1f' % (100.0 * results['optimality_gap']),
+}
+
+summary_df = pd.DataFrame.from_records([table_info]).transpose()
+
+```
+
+# `r py$report_title`
+
+```{r preprocessing, include = FALSE}
+
+# parse information from python to speed up batch functions
+data = py$data
+data$folds = py$cvindices[[py$results$fold_id]]
+has_fold_results = py$has_fold_results
+platt_scaling = py$platt_scaling
+discrete_flag = py$results$method_name %in% c("riskslim")
+
+# get model
+if (platt_scaling){
+  model = run.platt.scaling(py$coefs, data, cv_metric = "train", fold = 0)
+  process_model_fold = function(z) run.platt.scaling(c(z[["coefs"]]), data, cv_metric = "valid_train", fold = z[["fold_num"]])
+} else {
+  model = c(py$coefs)
+  process_model_fold = function(z) c(z[["coefs"]])
+}
+
+coefs = get.coefficients.from.model(model)
+
+# compute metrics for final model
+metrics_df = bind_rows(
+    get.score.based.metrics(model, data, cv_metric = "train", fold = 0, discrete_flag = discrete_flag),
+    #get.score.based.metrics(model, data, cv_metric = "test", fold = 0, discrete_flag = discrete_flag) 
+)
+
+roc_df = bind_rows(
+    get.roc.plot.data(model, data = data, model_type = "final", fold = 0, cv_metric = "train"),
+    #get.roc.plot.data(model, data = data, model_type = "final", fold = 0, cv_metric = "test")
+)
+    
+calibration_df = bind_rows(
+    get.calibration.plot.data(model, data = data, model_type = "final", fold = 0, cv_metric = "train", discrete_flag = discrete_flag),
+    #get.calibration.plot.data(model, data = data, model_type = "final", fold = 0, cv_metric = "test", discrete_flag = discrete_flag)
+)
+
+# compute metrics for k-cv
+if (has_fold_results){
+  
+  # post_processing functions
+  f_score = function(x) get.score.based.metrics(model = process_model_fold(x), data = data,  cv_metric = "valid",  fold = x[["fold_num"]], discrete_flag = discrete_flag)
+  f_roc = function(x) get.roc.plot.data(model = process_model_fold(x), data = data, cv_metric = "valid", model_type = "fold", fold = x[["fold_num"]])
+  
+  f_calibration = function(x) get.calibration.plot.data(model = process_model_fold(x), data = data, cv_metric = "valid", model_type = "fold", fold = x[["fold_num"]], discrete_flag = discrete_flag)
+  
+  fold_metrics_df = py$fold_results %>%  
+    map_df(f_score) %>% 
+    group_by(cv_metric) %>%
+    summarise(auc = mean(auc), 
+              mxe = mean(mxe), 
+              max_cal_err_distinct = mean(max_cal_err_distinct), 
+              avg_cal_err_distinct = mean(avg_cal_err_distinct),
+              max_cal_err_binned = mean(max_cal_err_binned),
+              avg_cal_err_binned = mean(avg_cal_err_binned),
+              n_bins = mean(n_bins),
+              n_distinct_scores = mean(n_distinct_scores))
+  
+  metrics_df = bind_rows(metrics_df, fold_metrics_df %>% mutate(fold = 0))
+  roc_df = bind_rows(roc_df, py$fold_results %>% map_df(f_roc))
+  calibration_df = bind_rows(calibration_df, py$fold_results %>% map_df(f_calibration))
+  
+}
+calibration_df = calibration_df %>% mutate(model_id = fold)
+calib_plot_df = collapse.calibration.df(df = calibration_df, lower_risk_threshold = 0.01, upper_risk_threshold = 0.99)
+
+```
+
+
+```{r summary-table, include = FALSE}
+summary_df = data.frame(py$summary_df)
+colnames(summary_df) = NULL;
+summary_xtable_str = print.xtable(x = xtable(summary_df, align = c("l", "r")),
+                                  include.rownames = TRUE,
+                                  include.colnames = FALSE,
+                                  add.to.row = insert.rules.to.tabular(n_rows = nrow(py$summary_df), include.colnames = FALSE),
+                                  hline.after = NULL)
+
+```
+\begin{table}[h]
+\small
+`r summary_xtable_str`
+\end{table}
+
+```{r metrics-table, include = FALSE}
+
+table_df = metrics_df %>% 
+  rowwise(cv_metric) %>%
+  mutate(AUC = sprintf("%0.3f", auc),
+         CAL = sprintf("%1.1f%%", 100.0 * ifelse(discrete_flag, avg_cal_err_distinct, avg_cal_err_binned)),
+         Loss = sprintf("%0.3f", mxe)) %>%
+  select(cv_metric, AUC, CAL, Loss) %>%
+  pivot_longer(cols = !cv_metric, names_to="metric", values_to="value") %>% 
+  pivot_wider(id_cols = "metric", names_from=cv_metric, values_from=value)
+
+if (has_fold_results){
+  #table_df = table_df %>% select(Metric = metric, Training = train, Testing=test, CV=valid)
+    table_df = table_df %>% select(Metric = metric, Training = train, CV=valid)
+} else {
+  #table_df = table_df %>% select(Metric = metric, Training=train, Testing=test)
+    table_df = table_df %>% select(Metric = metric, Training=train)
+}
+
+metrics_xtable = print.xtable(x = xtable(table_df, align = c("c", "l", rep("c", ncol(table_df)-1))),
+                              include.rownames = FALSE,
+                              include.colnames = TRUE,
+                              add.to.row = insert.rules.to.tabular(n_rows = nrow(table_df), include.colnames = TRUE),
+                              hline.after = NULL)
+
+```
+\begin{table}[h]
+\small
+`r metrics_xtable`
+\end{table}
+
+```{r model-output, include = FALSE}
+
+tex_names = texify.variable.names(xnames = data$variable_names,  yname = data$outcome_name)
+
+#model table
+if (discrete_flag) {
+  
+  model_xtable = get.scoring.system.xtable(coefs,
+                                           xnames = tex_names$xnames,
+                                           yname = tex_names$yname,
+                                           risk_score_flag = TRUE);
+} else {
+  
+  model_xtable = get.linear.model.xtable(coefs,
+                                         max_model_size = NULL,
+                                         n_vars_per_row = 2,
+                                         xnames = tex_names$xnames,
+                                         yname = tex_names$yname,
+                                         remove_score = FALSE)
+}
+
+
+risk_xtable = get.risk.xtable(calibration_df %>% filter(model_type == "final", cv_metric == "train") %>% select(score.min, score.max, risk = predicted.mean),
+                              lower_risk_threshold = 0.01,
+                              upper_risk_threshold = 0.99,
+                              score_digits = 1,
+                              risk_digits = 1,
+                              intercept_value = py$intercept_value,
+                              adjust_to_intercept = TRUE)
+
+model_xtable_str = print.xtable(x = model_xtable$xtable,
+                                hline.after = model_xtable$hline_guide,
+                                size = model_xtable$size_command,
+                                table.placement = "htbp",
+                                NA.string="",
+                                sanitize.text.function = identity,
+                                sanitize.rownames.function = sanitize.tex,
+                                sanitize.colnames.function = sanitize.tex,
+                                include.rownames = FALSE,
+                                include.colnames = FALSE,
+                                booktabs=FALSE)
+
+risk_xtable_str = print.xtable(x = risk_xtable$xtable,
+                               hline.after=risk_xtable$hline_guide,
+                               size=risk_xtable$size_command,
+                               include.rownames = FALSE,
+                               include.colnames = FALSE,
+                               table.placement = "htbp",
+                               NA.string="",
+                               sanitize.text.function = identity,
+                               sanitize.rownames.function = sanitize.tex,
+                               sanitize.colnames.function = sanitize.tex,
+                               booktabs=FALSE)
+```
+
+```{=latex}
+\begin{figure}[h]
+\centering\small
+`r model_xtable_str`
+\vspace{1em}
+`r risk_xtable_str`
+\end{figure}
+```
+
+
+```{r roc-plot, echo = FALSE, fig.keep = 'last', out.width="50%", fig.dim = c(6,6), fig.align = "center"}
+
+roc_df = roc_df %>% 
+    mutate(plot_type = interaction(model_type, cv_metric, sep = "_"),
+           final_model = grepl("final", plot_type))
+
+roc_plot = ggplot(roc_df, aes(x = FPR, y = TPR, group = plot_type)) +
+    geom_segment(aes(x = 0, y = 0, xend = 1, yend = 1), color="snow2", alpha = 0.25, size=0.5, linetype="dashed") +
+    scale_x_continuous(name = "False Positive Rate", labels = percent, breaks=pretty_breaks(5),limits=c(0,1)) +
+    scale_y_continuous(name = "True Positive Rate", labels = percent, breaks=pretty_breaks(5),limits=c(0,1)) +
+    scale_color_manual(values = c("final_train" = "black", "final_test" = "tan", "fold_train" = "snow3", "fold_test" = "snow3"), 
+                       labels = c("final_train" = "Final Model on Training Set", "Final on Test Set" = "tan", "K-CV Training" = "snow3", "K-CV Validation" = "snow3")) +
+    default.plot.theme() +
+    coord_fixed() + 
+    theme(legend.position = "right")
+
+if (discrete_flag){
+  roc_plot = roc_plot +
+    geom_line(data = roc_df %>% filter(plot_type == "fold_valid"), aes(x = FPR, y = TPR, group = fold), color = "grey", alpha = 0.8, size = 1) +
+    #
+    geom_line(data = roc_df %>% filter(plot_type == "final_train"), aes(x = FPR, y = TPR), color = "black", size = 1.25) +
+    geom_point(data = roc_df %>% filter(plot_type == "final_train"), aes(x = FPR, y = TPR), color = "black", size = 6) +
+    #
+    geom_line(data = roc_df %>% filter(plot_type == "final_test"), aes(x = FPR, y = TPR), color = "tan", size = 1.25) +
+    geom_point(data = roc_df %>% filter(plot_type == "final_test"), aes(x = FPR, y = TPR), color = "tan", size = 6) 
+} else {
+  roc_plot = roc_plot +
+    geom_line(data = roc_df %>% filter(plot_type == "fold_valid"), aes(x = FPR, y = TPR, group = fold), color = "grey", alpha = 0.8, size = 1) +
+    geom_line(data = roc_df %>% filter(plot_type == "final_train"), aes(x = FPR, y = TPR), color = "black", size = 1.25) +
+    geom_line(data = roc_df %>% filter(plot_type == "final_test"), aes(x = FPR, y = TPR), color = "tan", size = 1.25) 
+}
+
+
+roc_plot
+
+
+```
+
+
+
+```{r calibration-plot,echo = FALSE, fig.keep = 'last', out.width="50%", fig.dim = c(6,6), fig.align = "center"}
+
+if (discrete_flag) {
+    calib_plot_df = calib_plot_df %>% mutate(score.label = sprintf("%1.0f", score.mean - py$intercept_value));
+} else {
+    calib_plot_df = calib_plot_df %>% mutate(score.label = sprintf("%1.1f", score.mean - py$intercept_value));
+}
+
+calib_plot_df = calib_plot_df %>% 
+  mutate(plot_type = interaction(model_type, cv_metric, sep = "_"), 
+         final_model = grepl("final", plot_type));
+
+#Calibration Plot
+calibration_plot = ggplot(calib_plot_df) + 
+    aes(x = predicted.mean, y = actual.mean, group = plot_type) +
+    geom_segment(aes(x = 0, y = 0, xend = 1, yend = 1), color="#E9E9E9", size=0.5, linetype="longdash") +
+    #
+    geom_line(data = calib_plot_df %>% filter(plot_type == "fold_valid"), aes(x = predicted.mean, y = actual.mean, group = fold), color = "grey", alpha = 0.5, size = 1) +
+    #
+    geom_line(data = calib_plot_df %>% filter(plot_type == "final_train"), aes(x = predicted.mean, y = actual.mean), color = "black", size = 1.25) +
+    geom_point(data = calib_plot_df %>% filter(plot_type == "final_train"), aes(x = predicted.mean, y = actual.mean), color = "black", size = 6) +
+    #
+    geom_line(data = calib_plot_df %>% filter(plot_type == "final_test"), aes(x = predicted.mean, y = actual.mean), color = "tan", size = 1.25) +
+    geom_point(data = calib_plot_df %>% filter(plot_type == "final_test"), aes(x = predicted.mean, y = actual.mean), color = "tan", size = 6) +
+    #
+    geom_text(data = calib_plot_df %>% filter(plot_type %in% c("final_train", "final_test")),
+              aes(label = score.label),
+              size = ifelse(discrete_flag, 5, 3.5),
+              color = "white", check_overlap = TRUE) +
+    #
+    scale_x_continuous(name = "Predicted Risk", labels=percent,breaks=pretty_breaks(5),limits=c(0,1)) +
+    scale_y_continuous(name = "Observed Risk", labels=percent,breaks=pretty_breaks(5),limits=c(0,1)) +
+    scale_color_manual(values = c("final_train" = "black", "final_test" = "tan", "fold_train" = "snow3", "fold_test" = "snow3"), 
+                       labels = c("final_train" = "Final Model on Training Set", "Final on Test Set" = "tan", "K-CV Training" = "snow3", "K-CV Validation" = "snow3")) +
+    default.plot.theme() +
+    theme(legend.position = "right") +
+    coord_fixed()
+
+calibration_plot
+```
+
+```{r calibration-histogram, echo = FALSE, fig.keep = 'last', out.width="100%", fig.dim = c(12,6), fig.align = "center", message = FALSE}
+
+calib_hist_df = calib_plot_df %>%
+    filter(final_model) %>%
+    mutate(prop = count / sum(count)) %>%
+    select(plot_type, final_model, bin, predicted.mean, count, prop, score.label);
+
+#Calibration Histogram
+calibration_histogram_plot = ggplot(data = calib_hist_df %>% filter(plot_type %in% c("final_test", "final_train"))) + 
+  aes(x = score.label, y = prop, group = plot_type, fill=plot_type) +
+  #
+  geom_bar(stat = "identity", aes(fill = plot_type), width = 0.5, position = "dodge", alpha = 0.5) +
+  geom_text(aes(label = sprintf("n=%d", count)), position=position_dodge(width=0.9), vjust=-0.25, size = 6) +
+  scale_x_discrete(name = "Score", expand = expansion(add = 0.5)) +
+  scale_y_continuous(name = "% of Observations", labels=percent, breaks=pretty_breaks(5), limits=c(0, 1)) +
+  scale_fill_manual(values = c("final_train" = "black", 
+                               "final_test" = "tan", 
+                               "fold_train" = "snow3", 
+                               "fold_test" = "snow3"), 
+                    labels = c("final_train" = sprintf("Training Set (n = %d)",  calib_hist_df %>% filter(plot_type=="final_train") %>% tally(count) %>% pull(n)),
+                               "final_test" = sprintf("Test Set (n = %d)",  calib_hist_df %>% filter(plot_type=="final_test") %>% tally(count) %>% pull(n)),
+                               "fold_train" = "K-CV Training", 
+                               "fold_test" = "K-CV Validation")) +
+  scale_color_manual(values = c("final_train" = "black", "final_test" = "tan", "fold_train" = "snow3", "fold_test" = "snow3"), 
+                       labels = c("final_train" = "Final Model on Training Set", "Final on Test Set" = "tan", "K-CV Training" = "snow3", "K-CV Validation" = "snow3")) +
+  default.plot.theme() +
+  theme(legend.position = "right")
+
+
+calibration_histogram_plot
+```
+
+
+```{r raw-data-dump, echo = FALSE, fig.keep = 'last', out.width="100%", fig.dim = c(12,6), fig.align = "center", message = FALSE}
+write.csv(x = roc_df, file = paste0(py$build_header, "_roc_plot_raw.csv"), row.names = FALSE)
+write.csv(x = calib_plot_df, file = paste0(py$build_header, "_calibration_plot_raw"), row.names = FALSE)
+write.csv(x = calib_hist_df, file = paste0(py$build_header, "_calibration_histogram_raw.csv"), row.names = FALSE)
+```

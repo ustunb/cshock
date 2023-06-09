@@ -3,8 +3,8 @@ import numpy as np
 import pandas as pd
 from copy import deepcopy
 from imblearn.over_sampling import RandomOverSampler
-from dcptree.data import check_data, has_validation_set, has_test_set, has_intercept, add_intercept, remove_intercept, remove_variable, add_variable, get_partition_names, get_index_of, get_partition_indices
-from dcptree.data_processing import convert_categorical_to_rules
+from .data import check_data, has_validation_set, has_test_set, has_intercept, add_intercept, remove_intercept, remove_variable, add_variable, get_partition_names, get_index_of, get_partition_indices
+from .data_processing import convert_categorical_to_rules
 
 
 def as_group_info(values, values_validation = [], values_test = []):

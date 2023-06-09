@@ -92,13 +92,11 @@ def load_raw_data_from_disk(dataset_file, helper_file = None, weights_file = Non
         # get variable partitions
         if 'is_partition' in helper_df.columns:
             partitions = (helper_df['header'][helper_df['is_partition']]).values.tolist()
-
     else:
-        raise NotImplementedError()
         outcome_column_idx = RAW_DATA_OUTCOME_COL_IDX
         partitions = []
         variable_orderings = {}
-        variable_types = _infer_variable_types_from_data(raw_data)
+        variable_types = _infer_variable_types_from_data(df, outcome_column_idx)
 
 
     # load weights from disk
@@ -201,10 +199,9 @@ def _validate_raw_data_files(dataset_file, helper_file = None, weights_file = No
     return dataset_file, helper_file, weights_file
 
 
-def _infer_variable_types_from_data(raw_data):
+def _infer_variable_types_from_data(df, outcome_column_idx = None):
     """
     infers variable types
-    last column is outcome
     first column if the outcome variable
         can be (0,1) or (-1,1)
     other columns are the input variables
@@ -212,6 +209,23 @@ def _infer_variable_types_from_data(raw_data):
         boolean if values are 0,1 or true/false
         categorical if entries are text
     """
+    vtypes = {}
+    names = list(df.columns.values)
+    for n in names:
+        vals = df[n].values
+        if np.isin(vals, (0, 1)).all():
+            vtypes[n] = 'boolean'
+        elif df[n].dtype.kind in 'biufc':
+            vtypes[n] = 'numeric'
+        else:
+            vtypes[n] = 'categorical'
+
+    if outcome_column_idx is not None:
+        assert outcome_column_idx in range(len(names))
+        vtypes.pop(names[outcome_column_idx])
+
+    return vtypes
+
     raise NotImplementedError()
 
 
@@ -279,25 +293,23 @@ def _save_data_as_rdata(file_name, data, cvindices):
     import rpy2.robjects as rn
     from .rpy2_helper import r_assign, r_save_to_disk
     from rpy2.robjects import pandas2ri
+    from rpy2.robjects.conversion import localconverter
+
     data = set_defaults_for_data(data)
     assert check_data(data)
 
     fields_to_save = ["format", "Y", "sample_weights", "outcome_name", "variable_names", "variable_types", "variable_orderings"]
 
     if data['format'] == FORMAT_NAME_RULES:
-        fields_to_save += ["feature_groups", "feature_names", "feature_types", "feature_orderings",
-                           "feature_group_limits"]
+        fields_to_save += ["feature_groups", "feature_names", "feature_types", "feature_orderings", "feature_group_limits"]
     elif data['format'] == FORMAT_NAME_DCP:
         fields_to_save += ['partitions']
 
     try:
-
         for k in fields_to_save:
             r_assign(data[k], k)
-
     except:
-
-        from dcptree.debug import ipsh
+        from dev.debug import ipsh
         ipsh()
 
     r_assign(cvindices, "cvindices")
@@ -310,20 +322,25 @@ def _save_data_as_rdata(file_name, data, cvindices):
                             }
     col_types = {n: var_type_to_col_type[data['variable_types'][n]] for n in data['variable_names']}
 
-    pandas2ri.activate()
-
     X_df = pd.DataFrame(data = data['X'])
     X_df.columns = data['variable_names']
     X_df = X_df.astype(col_types)
-    rn.r.assign('X', X_df)
+    with localconverter(rn.default_converter + pandas2ri.converter):
+        X_rdf = rn.conversion.py2rpy(X_df)
+
+    rn.r.assign('X', X_rdf)
 
     # test set
     has_test_set = ('X_test' in data) and ('Y_test' in data) and ('sample_weights_test' in data)
     if has_test_set:
+
         X_test_df = pd.DataFrame(data = data['X_test'])
         X_test_df.columns = data['variable_names']
         X_test_df = X_test_df.astype(col_types)
-        rn.r.assign('X_test', pandas2ri.py2ri(X_test_df))
+        with localconverter(rn.default_converter + pandas2ri.converter):
+            X_test_rdf = rn.conversion.py2rpy(X_test_df)
+        rn.r.assign('X_test', X_test_rdf)
+
         r_assign(data['Y_test'], 'Y_test')
         r_assign(data['sample_weights_test'], 'sample_weights_test')
     else:
@@ -334,8 +351,6 @@ def _save_data_as_rdata(file_name, data, cvindices):
                 sample_weights_test = matrix(data=1.0, nrow = 0, ncol = 1);
                 """
                 )
-
-    pandas2ri.deactivate()
 
     variables_to_save = fields_to_save + ["cvindices", "X", "X_test", "Y_test", "sample_weights_test"]
     r_save_to_disk(file_name, variables_to_save)

@@ -1,0 +1,264 @@
+---
+output:
+  pdf_document: 
+    keep_tex: yes
+    fig_width: 6
+    fig_height: 4
+    toc: false
+    number_sections: false
+    extra_dependencies:
+      colortbl: []
+      booktabs: []
+      grffile: ["space"]
+      flafter: []
+
+fontsize: 11pt
+geometry: margin=1in
+
+params:
+  #build_dir: '/Users/berk/Dropbox (Harvard University)/repos/cshock/reports/cshock20_riskslim_K05N01_overview'
+  #report_python_dir: '/Users/berk/Dropbox (Harvard University)/repos/cshock/'
+  #report_data: '/Users/berk/Dropbox (Harvard University)/repos/cshock/results/cshock20_riskslim_K05N01_overview.results'
+  build_dir: '/Users/berk/Dropbox (Harvard University)/repos/cshock/results/cshock20_riskslim_K05N01_overview'
+  report_python_dir: '/Users/berk/Dropbox (Harvard University)/repos/cshock/'
+  report_data: '/Users/berk/Dropbox (Harvard University)/repos/cshock/results/cshock20_riskslim_K05N01_overview.results'
+---
+
+```{=latex}
+
+%Font Faces
+\newcommand{\cell}[2]{\begin{tabular}{#1}#2\end{tabular}}
+\newcommand{\bfcell}[2]{\setlength{\tabcolsep}{0pt}\textbf{\begin{tabular}{#1}#2\end{tabular}}}
+\newcommand{\textds}[1]{\texttt{\footnotesize{#1}}}
+\newcommand{\textfn}[1]{#1}
+\newcommand{\textssm}[1]{\sf{#1}}
+
+%Scoring System Models
+\newcommand{\prow}[0]{\quad\mathrel{\raisebox{-0.75ex}{\dots}}}
+\newcommand{\score}[0]{{\color{black}\textbf{SCORE}}}
+
+%Colors for Scoring System Models
+\definecolor{predcolor}{gray}{0.95}
+\definecolor{scorecolor}{gray}{0.95}
+\definecolor{riskcolor}{gray}{0.95}
+
+%Commands for Scoring System Models
+\newcommand{\modelfont}{\renewcommand*\familydefault{\sfdefault}\normalfont}
+\newcommand{\instruction}[2]{{\color{white}\phantom{\textbf{add points from rows {#1} to {#2}}}}}
+
+\newcommand{\scoringsystem}[0]{\footnotesize\centering\renewcommand{\arraystretch}{1.35}\modelfont{}}
+\newcommand{\risktable}[0]{\par\vspace{0.5em}\footnotesize\centering\renewcommand{\arraystretch}{1.25}\modelfont{}}
+\newcommand{\predcell}[2]{\par\vspace{0.5em}\renewcommand{\arraystretch}{1.5}\modelfont%
+\begin{tabular}{|>{\columncolor{predcolor}}{#1}|}\hline\small{\textbf{#2}}\\\hline\end{tabular}}
+
+\newcommand{\risklabel}[0]{{\color{black}\textbf{RISK}}}
+\newcommand{\scorelabel}[0]{{\color{black}\textbf{SCORE}}}
+\pagenumbering{gobble}
+```
+
+```{r r-setup, include = FALSE}
+packages = c('reticulate', 'dplyr', 'purrr', 'tidyr', 'knitr', 'ggplot2', 'xtable', 'stringr', 'reshape2', 'scales', 'gridExtra', 'grid')
+for (pkg in packages) {
+  library(pkg, character.only = TRUE, warn.conflicts = FALSE, quietly = TRUE, verbose = FALSE)
+}
+
+# load reticulate virtual environment
+use_virtualenv(virtualenv = "reticulate-python-env", required = TRUE)
+
+# helper functions
+source(paste0(params$report_python_dir, "/reporting/utils.R"))
+
+# general knitr options
+knitr::opts_knit$set(
+  echo = FALSE,
+  warning = FALSE, 
+  fig.path = 'figure/' 
+)
+
+```
+
+```{python python-setup, include = FALSE}
+import sys
+import numpy as np
+import pandas as pd
+import dill
+import itertools
+from pathlib import Path
+
+# package-related
+sys.path.append(r.params["report_python_dir"])
+
+from riskslim.defaults import INTERCEPT_NAME
+from riskslim.paths import data_dir, results_dir
+from riskslim.data_io import load_processed_data
+from riskslim.cross_validation import split_data_by_cvindices
+from scripts.utils import get_results_name
+
+```
+
+```{python python-load, include = FALSE}
+try:
+    with open(r.params['report_data'], 'rb') as infile:
+      results = dill.load(infile)
+except ValueError:
+    import pickle5 as pickle
+    with open(r.params['report_data'], 'rb') as infile:
+      results = pickle.load(infile)
+
+# build headers
+build_dir = Path(r.params['build_dir'])
+build_header = str(build_dir / Path(r.params['report_data']).stem)
+discrete_flag = 'riskslim' in results['method_name']
+platt_scaling = results['platt_scaling']
+
+# load data file
+results['data_file'] = data_dir / Path(results['data_file']).name 
+results['data_name'] = (results['data_file'].stem).replace('_processed', '')
+data, cvindices = load_processed_data(file_name = str(results['data_file']))
+data['folds'] = cvindices[results['fold_id']]
+
+# process results
+df = pd.DataFrame(results['df'])
+df_fold = pd.DataFrame(results['df_fold'])
+coefs = {k:v for (k, v) in results['coefs'].items()}
+coefs_fold = {k:v for (k, v) in results['coefs_fold'].items()}
+
+# title
+if (platt_scaling):
+  report_title = "%s -- %s + Platt Scaling -- Overview" % (results['data_name'], results['method_name'])
+else:
+  report_title = "%s -- %s -- Overview" % (results['data_name'], results['method_name'])
+
+```
+
+
+```{r preprocessing, include = FALSE}
+
+hyperparameter_names = py$results$hyperparameter_names
+data = py$data
+data$folds = py$cvindices[[py$results$fold_id]]
+df_fold = data.frame(py$df_fold) %>% mutate(model_id = row_number())
+coefs_fold = py$coefs_fold
+
+# get model
+if (py$platt_scaling){
+  process_model_full = function(z) run.platt.scaling(as.numeric(z), data, cv_metric = "train", fold = 0)
+  process_model_fold = function(z, k) run.platt.scaling(as.numeric(z), data, cv_metric = "valid_train", fold = k)
+} else {
+  process_model_full = function(z) as.numeric(z)
+  process_model_fold = function(z, k) as.numeric(z)
+}
+
+metrics_df = bind_rows(
+  py$coefs %>% map_df(.f = function(x){get.score.based.metrics(model = process_model_full(x), data = py$data, cv_metric = "train", discrete_flag = py$discrete_flag)}, .id = "model_id"),
+  py$coefs %>% map_df(.f = function(x){get.score.based.metrics(model = process_model_full(x), data = py$data, cv_metric = "test", discrete_flag = py$discrete_flag)}, .id = "model_id")
+  ) %>% 
+  rowwise(model_id) %>%
+  mutate(model_id = as.numeric(model_id) + 1,
+         cal = ifelse(py$discrete_flag, avg_cal_err_distinct, avg_cal_err_binned)) %>%
+  select(cv_metric, model_id, mxe = mxe, auc = auc, cal = cal)
+
+
+df = data.frame(py$df) %>% 
+  mutate(model_id = row_number()) %>%
+  left_join(metrics_df %>% filter(cv_metric == "train") %>% select(model_id, mxe_train = mxe, auc_train = auc, cal_train = cal), by = c("model_id")) %>%
+  left_join(metrics_df %>% filter(cv_metric == "test") %>% select(model_id, mxe_test = mxe, auc_test = auc, cal_test = cal), by = c("model_id")) %>%
+  select(model_id, everything())
+
+get_valid_metrics <- function(row){get.score.based.metrics(model = process_model_fold(coefs_fold[[row$model_id]], row$fold),data, fold = row$fold, cv_metric = "valid", discrete_flag = py$discrete_flag)}
+df_fold_valid_metrics = df_fold %>%
+  group_by(model_id) %>%
+  do(get_valid_metrics(.)) %>%
+  bind_rows() %>% 
+  mutate(cal = ifelse(py$discrete_flag, avg_cal_err_distinct, avg_cal_err_binned))
+  
+
+df_cv = df_fold %>% 
+  #left_join(df_fold_train_metrics %>% select(model_id, auc_train = auc, mxe_train = mxe, cal_train = cal)) %>% 
+  left_join(df_fold_valid_metrics %>% select(model_id, auc_test = auc, mxe_test = mxe, cal_test = cal)) %>%
+  select(model_id, fold, everything()) %>%
+  group_by(!!!syms(hyperparameter_names)) %>% 
+  summarise(
+    auc_valid = mean(auc_test), cal_valid = mean(cal_test), mxe_valid = mean(mxe_test)
+  )
+
+df_all = df %>% 
+  left_join(df_cv, by = hyperparameter_names) %>%
+  select(-fold) %>% 
+  mutate(model_size = max_L0_value) %>%
+  filter(model_size > 0)
+
+best_df = df_all %>% 
+  group_by(model_size) %>%
+  slice_max(auc_valid) %>%
+  select(model_id, !!!syms(hyperparameter_names), everything()) %>%
+  pivot_longer(cols= c(starts_with("auc"), starts_with("cal"), starts_with("mxe")), names_to = "metric", values_to = "value") %>%
+  select(model_size, metric, value) %>%
+  separate(metric, into = c("metric", "cv_metric"),  sep = "_", remove = TRUE, extra = "merge")  %>%
+  mutate(metric = recode(metric, "mxe" = "loss"))
+
+plot_df = best_df %>% 
+  filter(cv_metric != "valid_train", model_size >= 1)
+
+plot_helper = list()
+plot_helper$x_axis_scale = scale_x_continuous(name = "Model Size", breaks = seq(plot_df$model_size %>% min(), plot_df$model_size %>% max()))
+plot_helper$color_scale = scale_color_manual(
+  values = c("train" = "black", "test" = "tan", "valid" = "snow3", "fold_test" = "snow3"),  
+  labels = c("train" = "Training Set", "test" = "Test Set", "valid" = "K-CV")
+)
+plot_helper$theme = default.plot.theme() + theme(legend.position = "right")
+    
+```
+
+# `r py$report_title`
+
+```{r auc-plot, fig.keep = 'last', out.width="80%", fig.dim = c(12,6), fig.align = "center", echo=FALSE, warning=FALSE}
+
+auc_plot =  ggplot(data = plot_df %>% filter(metric=="auc")) + 
+  aes(x = model_size, y = value, group = cv_metric, color = cv_metric) +
+  geom_line(size = 1.5, alpha = 0.7) +
+  geom_point(size = 6) +
+  scale_y_continuous(name = "AUC", breaks = pretty_breaks(10), labels = label.auc) +
+  plot_helper$x_axis_scale + 
+  plot_helper$color_scale + 
+  plot_helper$theme
+
+auc_plot
+```
+
+```{r cal-plot, fig.keep = 'last', out.width="80%", fig.dim = c(12,6), fig.align = "center", echo = FALSE, warning=FALSE}
+
+cal_plot =  ggplot(data = plot_df %>% filter(metric=="cal")) +
+  aes(x = model_size, y = value, group = cv_metric, color = cv_metric) +
+  geom_line(size = 1.5, alpha = 0.7) +
+  geom_point(size = 6) +
+  scale_y_continuous(name = "CAL", breaks = pretty_breaks(5), labels = percent, limits = c(0, NA)) +
+  plot_helper$x_axis_scale + 
+  plot_helper$color_scale + 
+  plot_helper$theme
+
+cal_plot
+```
+
+```{r mxe-plot, fig.keep = 'last', out.width="80%", fig.dim = c(12,6), fig.align = "center", echo = FALSE, warning=FALSE}
+
+mxe_plot = ggplot(data = plot_df %>% filter(metric=="loss")) + 
+  aes(x = model_size, y = value, group = cv_metric, color = cv_metric) +
+  geom_line(size = 1, alpha = 0.7) +
+  geom_point(size = 4) +
+  scale_y_continuous(name = "Loss", breaks = pretty_breaks(10), labels = label.auc, limit = c(0.2, 0.7)) +
+  plot_helper$x_axis_scale + 
+  plot_helper$color_scale + 
+  plot_helper$theme
+
+mxe_plot
+```
+
+
+```{r raw-data-dump, echo = FALSE, fig.keep = 'last', out.width="100%", fig.dim = c(12,6), fig.align = "center", message = FALSE}
+
+write.csv(x = best_df %>%  select(sample_type = cv_metric, metric, model_size, value) %>% arrange(sample_type, metric, model_size), 
+          file = paste0(py$build_header, "_raw.csv"),
+          row.names = FALSE)
+
+```

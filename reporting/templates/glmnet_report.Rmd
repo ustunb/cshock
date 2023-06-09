@@ -1,0 +1,269 @@
+---
+output:
+  pdf_document: 
+    keep_tex: yes
+    fig_width: 6
+    fig_height: 4
+    toc: false
+    number_sections: false
+    extra_dependencies:
+      colortbl: []
+      booktabs: []
+      grffile: ["space"]
+      flafter: []
+
+fontsize: 11pt
+geometry: margin=1in
+
+params:
+  build_dir: '/Users/berk/Dropbox (Harvard University)/repos/cshock/reports/'
+  report_python_dir: '/Users/berk/Dropbox (Harvard University)/repos/cshock/'
+  venv_dir: '/usr/local/anaconda3/envs/py37intel/'
+  report_data: '/Users/berk/Dropbox (Harvard University)/repos/cshock/results/cshock20_plr_K05N01_all.results'
+  platt_scaling: True
+---
+
+```{=latex}
+
+%Font Faces
+\newcommand{\cell}[2]{\begin{tabular}{#1}#2\end{tabular}}
+\newcommand{\bfcell}[2]{\setlength{\tabcolsep}{0pt}\textbf{\begin{tabular}{#1}#2\end{tabular}}}
+\newcommand{\textds}[1]{\texttt{\footnotesize{#1}}}
+\newcommand{\textfn}[1]{#1}
+\newcommand{\textssm}[1]{\sf{#1}}
+
+%Scoring System Models
+\newcommand{\prow}[0]{\quad\mathrel{\raisebox{-0.75ex}{\dots}}}
+\newcommand{\score}[0]{{\color{black}\textbf{SCORE}}}
+
+%Colors for Scoring System Models
+\definecolor{predcolor}{gray}{0.95}
+\definecolor{scorecolor}{gray}{0.95}
+\definecolor{riskcolor}{gray}{0.95}
+
+%Commands for Scoring System Models
+\newcommand{\modelfont}{\renewcommand*\familydefault{\sfdefault}\normalfont}
+\newcommand{\instruction}[2]{{\color{white}\phantom{\textbf{add points from rows {#1} to {#2}}}}}
+
+\newcommand{\scoringsystem}[0]{\footnotesize\centering\renewcommand{\arraystretch}{1.35}\modelfont{}}
+\newcommand{\risktable}[0]{\par\vspace{0.5em}\footnotesize\centering\renewcommand{\arraystretch}{1.25}\modelfont{}}
+\newcommand{\predcell}[2]{\par\vspace{0.5em}\renewcommand{\arraystretch}{1.5}\modelfont%
+\begin{tabular}{|>{\columncolor{predcolor}}{#1}|}\hline\small{\textbf{#2}}\\\hline\end{tabular}}
+
+\newcommand{\risklabel}[0]{{\color{black}\textbf{RISK}}}
+\newcommand{\scorelabel}[0]{{\color{black}\textbf{SCORE}}}
+\pagenumbering{gobble}
+```
+
+```{r r-setup, include = FALSE}
+
+knitr::opts_knit$set(
+  echo = FALSE, 
+  include = FALSE,
+  fig.path = 'figure/' 
+)
+
+packages = c('reticulate', 'dplyr', 'purrr', 'tidyr', 'knitr', 'ggplot2', 'xtable', 'stringr', 'reshape2', 'scales', 'gridExtra', 'grid')
+for (pkg in packages) {
+  library(pkg, character.only = TRUE, warn.conflicts = FALSE, quietly = TRUE, verbose = FALSE)
+}
+
+# helper functions
+source(paste0(params$report_python_dir, "/reporting/reporting_utils.R"))
+
+# load python virtual environment for reticulate
+tryCatch({
+  use_condaenv(condaenv = params$venv_dir, required = TRUE)
+}, error = function(error_condition) {
+  use_virtualenv(virtualenv = params$venv_dir, required = TRUE)
+})
+
+
+```
+
+```{python python-setup, include = FALSE}
+import sys
+import numpy as np
+import pandas as pd
+import dill
+import itertools
+from pathlib import Path
+
+# package-related
+sys.path.append(r.params['report_python_dir'])
+from riskslim.defaults import INTERCEPT_NAME
+from riskslim.paths import data_dir, results_dir
+from riskslim.data_io import load_processed_data
+from riskslim.cross_validation import split_data_by_cvindices
+from scripts.utils import get_results_name
+
+try:
+    with open(r.params['report_data'], 'rb') as infile:
+      results = dill.load(infile)
+except ValueError:
+    import pickle5 as pickle
+    with open(r.params['report_data'], 'rb') as infile:
+      results = pickle.load(infile)
+    
+# Load Data
+results['data_file'] = data_dir / Path(results['data_file']).name 
+results['data_name'] = (results['data_file'].stem).replace('_processed', '')
+data, cvindices = load_processed_data(file_name = str(results['data_file']))
+data['folds'] = cvindices[results['fold_id']]
+
+# Report Title
+report_title = "%s -- %s -- Overview Report" % (results['data_name'], results['method_name'])
+
+df = pd.DataFrame(results['df'])
+coefs = {k:v for (k, v) in results['coefs'].items()}
+
+df_fold = pd.DataFrame(results['df_fold'])
+coefs_fold = {k:v for (k, v) in results['coefs_fold'].items()}
+
+```
+
+# `r py$report_title`
+
+```{r preprocessing, include = FALSE}
+data = py$data
+df_fold = data.frame(py$df_fold) %>% mutate(model_id = row_number())
+coefs_fold = py$coefs_fold
+names(coefs)
+lower_risk_threshold = 0.01;
+upper_risk_threshold = 0.99;
+
+
+# get model
+if (params$platt_scaling){
+  process_model_fold = function(z) run.platt.scaling(c(z[["coefs"]]), data, cv_metric = "valid_train", fold = z[["fold_num"]])
+} else {
+  process_model_fold = function(z) c(z[["coefs"]])
+}
+
+models = py$coefs %>%
+    map_df(.f = function(x){run.platt.scaling(c(z[["coefs"]]), data, cv_metric = "train", fold = z[["fold_num"]])}, .id = "model_id")
+
+fold_models = list()
+for (i in 1:nrow(df_fold)){
+    row = df_fold %>% slice(i)
+    fold_models[[row[['model_id']]]] = run.platt.scaling(model = py$coefs_fold[[row$model_id]], data = data, cv_metric = "train", fold = row[['fold']])
+}
+
+### compute metrics ####
+metrics_df = bind_rows(
+  py$coefs %>% map_df(.f = function(x){get.score.based.metrics(model = as.numeric(x), data = py$data, cv_metric = "train")}, .id = "model_id"),
+  py$coefs %>% map_df(.f = function(x){get.score.based.metrics(model = as.numeric(x), data = py$data, cv_metric = "test")}, .id = "model_id")
+) %>% mutate(model_id = as.numeric(model_id))
+
+df = data.frame(py$df) %>% 
+  select(-auc_train, -auc_test, - auc_cv_train_mean, -auc_cv_test_mean) %>%
+  mutate(model_id = row_number()) %>% 
+  left_join(metrics_df %>% 
+                filter(cv_metric == "train") %>% 
+                select(model_id, mxe_train = mxe, auc_train = auc, cal_train = avg_cal_err_binned), 
+            by = c("model_id")) %>%
+  left_join(metrics_df %>% 
+                filter(cv_metric == "test") %>% 
+                select(model_id, mxe_test = mxe, auc_test = auc, cal_test = avg_cal_err_binned, ), 
+            by = c("model_id")) %>%
+  select(model_id, alpha, lambda = lambda_, everything())
+
+
+# get_valid_train_metrics <- function(row){get.score.based.metrics(model = coefs_fold[[row$model_id]], data = data, fold = row$fold, cv_metric = "valid_train")}
+# df_fold_train_metrics = df_fold %>% 
+#   group_by(model_id) %>%
+#   do(get_valid_train_metrics(.)) %>%
+#   bind_rows()
+
+get_valid_metrics <- function(row){get.score.based.metrics(model = coefs_fold[[row$model_id]], data, fold = row$fold, cv_metric = "valid")}
+
+df_fold_valid_metrics = df_fold %>% 
+  group_by(model_id) %>%
+  do(get_valid_metrics(.)) %>%
+  bind_rows()
+
+df_cv = df_fold %>% 
+  #left_join(df_fold_train_metrics %>% select(model_id, auc_train = auc, mxe_train = mxe, cal_train = avg_cal_err_binned)) %>% 
+  left_join(df_fold_valid_metrics %>% select(model_id, auc_test = auc, mxe_test = mxe, cal_test = avg_cal_err_binned)) %>%
+  select(model_id, alpha, lambda = lambda_, fold, everything()) %>%
+  group_by(alpha, lambda) %>% 
+  summarise(
+    # auc_cv_train_mean = mean(auc_train), cal_cv_train_mean = mean(cal_train), mxe_cv_train_mean = mean(mxe_train),
+    auc_valid = mean(auc_test), cal_valid = mean(cal_test), mxe_valid = mean(mxe_test)
+  )
+
+df_all = df %>% 
+  left_join(df_cv, by = c("alpha", "lambda")) %>%
+  select(-fold) %>% 
+  filter(model_size > 0) 
+
+best_df = df_all %>% 
+  group_by(model_size) %>%
+  slice_max(auc_valid) %>%
+  select(alpha, lambda, model_id, model_size, everything()) %>%
+  pivot_longer(cols= c(starts_with("auc"), starts_with("cal"), starts_with("mxe")), names_to = "metric", values_to = "value") %>%
+  select(model_size, metric, value) %>%
+  separate(metric, into = c("metric", "cv_metric"),  sep = "_", remove = TRUE, extra = "merge")  %>%
+  mutate(metric = recode(metric, "mxe" = "loss"))
+
+write.csv(x = best_df %>%  select(sample_type = cv_metric, metric, model_size, value) %>% arrange(sample_type, metric, model_size), 
+          file = gsub("\\.results", "_results.csv", params$report_data), 
+          row.names = FALSE)
+
+plot_df = best_df %>% 
+  filter(cv_metric != "valid_train", model_size > 2) %>%
+  filter(model_size <= 50)
+
+
+```
+
+
+
+```{r auc_plot, fig.keep = 'last', out.width="80%", fig.dim = c(12,6), fig.align = "center"}
+
+auc_plot =  ggplot(data = plot_df %>% filter(metric=="auc")) + 
+  aes(x = model_size, y = value, group = cv_metric, color = cv_metric) +
+  geom_line(size = 1.5, alpha = 0.7) +
+  geom_point(size = 6) +
+  scale_y_continuous(name = "AUC", breaks = pretty_breaks(10), labels = label.auc) +
+  scale_x_continuous(name = "Model Size") +
+  scale_color_manual(values = c("train" = "black", "test" = "tan", "valid" = "snow3", "fold_test" = "snow3"),  labels = c("train" = "Training Set", "test" = "Test Set", "valid" = "K-CV")) + 
+  default.plot.theme() +
+  theme(legend.position = "right")
+
+auc_plot
+
+```
+
+```{r cal_plot, fig.keep = 'last', out.width="80%", fig.dim = c(12,6), fig.align = "center"}
+
+cal_plot =  ggplot(data = plot_df %>% filter(metric=="cal")) +
+  aes(x = model_size, y = value, group = cv_metric, color = cv_metric) +
+  geom_line(size = 1.5, alpha = 0.7) +
+  geom_point(size = 6) +
+  scale_y_continuous(name = "CAL", breaks = pretty_breaks(5), labels = percent, limits = c(0, NA)) +
+  scale_x_continuous(name = "Model Size") +
+  scale_color_manual(values = c("train" = "black", "test" = "tan", "valid" = "snow3", "fold_test" = "snow3"),  labels = c("train" = "Training Set", "test" = "Test Set", "valid" = "K-CV")) + 
+  default.plot.theme() +
+  theme(legend.position = "right")
+
+cal_plot
+
+```
+
+```{r mxe_plot, fig.keep = 'last', out.width="80%", fig.dim = c(12,6), fig.align = "center"}
+
+mxe_plot = ggplot(data = plot_df %>% filter(metric=="loss")) + 
+  aes(x = model_size, y = value, group = cv_metric, color = cv_metric) +
+  geom_line(size = 1, alpha = 0.7) +
+  geom_point(size = 4) +
+  scale_y_continuous(name = "Loss", breaks = pretty_breaks(10), labels = label.auc, limit = c(0.2, 0.7)) +
+  scale_x_continuous(name = "Model Size") +
+  scale_color_manual(values = c("train" = "black", "test" = "tan", "valid" = "snow3", "fold_test" = "snow3"),  labels = c("train" = "Training Set", "test" = "Test Set", "valid" = "K-CV")) + 
+  default.plot.theme() +
+  theme(legend.position = "right")
+
+mxe_plot
+
+```
+    

@@ -16,7 +16,6 @@ INNER_CV_PARSER = re.compile(INNER_CV_PATTERN)
 
 #### filtering data ####
 
-
 def filter_data_to_fold(data, cvindices, fold_id = TRIVIAL_FOLD_ID, fold_num = 0, include_validation = False, include_test = False):
     """
 
@@ -70,7 +69,6 @@ def filter_data_to_fold(data, cvindices, fold_id = TRIVIAL_FOLD_ID, fold_num = 0
         test_idx = False * train_idx
 
     N = data['X'].shape[0]
-    ipsh()
     assert len(test_idx) == N
     assert len(valid_idx) == N
     assert len(train_idx) == N

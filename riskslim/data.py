@@ -2,8 +2,6 @@ import warnings
 import itertools
 import numpy as np
 from copy import deepcopy
-from dcptree.helper_functions import print_log
-
 OUTCOME_NAME = 'Y'
 POSITIVE_LABEL = '+1'
 NEGATIVE_LABEL = '-1'
@@ -268,8 +266,7 @@ def set_defaults_for_data(data):
                        ('X_validation', 'Y_validation', 'sample_weights_validation')]:
 
         if xf and yf in data:
-
-            n_points = data[xf]
+            n_points = data[xf].shape[0]
             data[yf] = data[yf].flatten()
             if sw in data:
                 if data[sw].ndim > 1 and data[sw].shape == (n_points, 1):
@@ -693,17 +690,17 @@ def sample_test_data(data, max_features = 2, n_pos = 50, n_neg = 50, n_conflict 
 
         # adjust sample sizes
         if n_pos > X_pos.shape[0]:
-            print_log("only %d points with y[i] = +1 " % X_pos.shape[0])
-            print_log("setting n_pos = %d" % X_pos.shape[0])
+            warnings.warn("only %d points with y[i] = +1 " % X_pos.shape[0])
+            warnings.warn("setting n_pos = %d" % X_pos.shape[0])
             n_pos = min(n_pos, X_pos.shape[0])
 
         if n_neg > X_neg.shape[0]:
-            print_log("only %d points with y[i] = -1 " % X_neg.shape[0])
-            print_log("setting n_neg = %d" % X_neg.shape[0])
+            warnings.warn("only %d points with y[i] = -1 " % X_neg.shape[0])
+            warnings.warn("setting n_neg = %d" % X_neg.shape[0])
             n_neg = min(n_neg, X_neg.shape[0])
 
         if n_conflict > n_pos:
-            print_log("setting n_conflict = %d" % min(n_pos, X_neg.shape[0]))
+            warnings.warn("setting n_conflict = %d" % min(n_pos, X_neg.shape[0]))
             n_conflict = min(n_conflict, n_pos)
 
     # ensure that we have at exactly n_conflict rows with identical features but opposite labels
@@ -723,8 +720,8 @@ def sample_test_data(data, max_features = 2, n_pos = 50, n_neg = 50, n_conflict 
                 X_neg = np.delete(X_neg, neg_idx_to_drop, axis = 0)
 
                 if n_neg > X_neg.shape[0]:
-                    print_log("only %d points with y[i] = -1 " % X_neg.shape[0])
-                    print_log("setting n_neg = %d" % X_neg.shape[0])
+                    warnings.warn("only %d points with y[i] = -1 " % X_neg.shape[0])
+                    warnings.warn("setting n_neg = %d" % X_neg.shape[0])
                     n_neg = min(n_neg, X_neg.shape[0])
 
             else:
@@ -733,8 +730,8 @@ def sample_test_data(data, max_features = 2, n_pos = 50, n_neg = 50, n_conflict 
                 X_pos = np.delete(X_pos, pos_idx_to_drop, axis = 0)
 
                 if n_pos > X_pos.shape[0]:
-                    print_log("only %d points with y[i] = +1 " % X_pos.shape[0])
-                    print_log("setting n_pos = %d" % X_pos.shape[0])
+                    warnings.warn("only %d points with y[i] = +1 " % X_pos.shape[0])
+                    warnings.warn("setting n_pos = %d" % X_pos.shape[0])
                     n_pos = min(n_pos, X_pos.shape[0])
 
         elif n_common < n_conflict:
